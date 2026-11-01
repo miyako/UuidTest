@@ -2,40 +2,91 @@ name: Release compiled component
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: Existing matching version tag; never creates or moves a tag
+        required: true
+        type: string
+      signed:
+        description: Require Developer ID signing and Apple notarization (version policy may also require it)
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ inputs.version_tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   gate:
     runs-on: ubuntu-24.04
+    outputs:
+      apple_signing: ${{ steps.profile.outputs.apple_signing }}
+      source_sha: ${{ steps.release_ref.outputs.sha }}
+      release_tag: ${{ steps.release_ref.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Resolve the existing version tag to an immutable commit
+        id: release_ref
+        env:
+          VERSION_TAG: ${{ inputs.version_tag }}
+        run: >-
+          python scripts/release_ref.py resolve
+          --event "$GITHUB_EVENT_NAME" --ref-type "$GITHUB_REF_TYPE"
+          --ref-name "$GITHUB_REF_NAME" --version-tag "$VERSION_TAG"
+          --event-sha "$GITHUB_SHA"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release_ref.outputs.sha }}
       - name: Require initialized matching repository, version tag and explicit 4D opt-in
         env:
           FOURD_ENABLED: ${{ vars.FOURD_ENABLED }}
-        run: python scripts/ci_config.py validate --release
+          RELEASE_TAG: ${{ steps.release_ref.outputs.tag }}
+        run: python scripts/ci_config.py validate --release --tag "$RELEASE_TAG"
+      - name: Select the explicitly versioned release signing policy
+        id: profile
+        env:
+          REQUIRE_APPLE_SIGNING: ${{ github.event_name == 'workflow_dispatch' && inputs.signed }}
+        run: |
+          if [ "$REQUIRE_APPLE_SIGNING" = "true" ]; then
+            python scripts/sign_release.py policy --require-apple-signing
+          else
+            python scripts/sign_release.py policy
+          fi
 
   native:
     needs: gate
     uses: ./.github/workflows/ci.yml
+    with:
+      source_sha: ${{ needs.gate.outputs.source_sha }}
+      release_call: true
 
   compile:
-    needs: native
+    needs: [native, gate]
     runs-on: macos-15
     env:
       FOURD_ENABLED: ${{ vars.FOURD_ENABLED }}
       TOOL4D_URL: ${{ vars.TOOL4D_URL }}
       TOOL4D_SHA256: ${{ vars.TOOL4D_SHA256 }}
+      RELEASE_TAG: ${{ needs.gate.outputs.release_tag }}
+      RELEASE_SHA: ${{ needs.gate.outputs.source_sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.source_sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python scripts/ci_config.py validate --release
+      - run: python scripts/ci_config.py validate --release --tag "$RELEASE_TAG"
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.10'
@@ -61,11 +112,14 @@ jobs:
       - name: Download SHA-256-verified tool4D
         run: python scripts/ci_config.py download-tool4d
       - name: Test interpreted component from a real 4D host before compilation
-        run: python scripts/test_4d.py --tool4d .tools/tool4d.app/Contents/MacOS/tool4d
+        run: |
+          mkdir -p dist
+          python scripts/test_4d.py --tool4d .tools/tool4d.app/Contents/MacOS/tool4d
+          cp build/host-status.json dist/UuidTest-host-source.json
       - name: Compile both 4D targets (no source-only fallback)
         run: python scripts/compile_component.py --tool4d .tools/tool4d.app/Contents/MacOS/tool4d
       - name: Package unsigned compiled dependency-manager component
-        run: python scripts/package_component.py --unpack-test
+        run: python scripts/package_component.py --tag "$RELEASE_TAG" --unpack-test
       - name: Require real host tests against the actual compiled release component
         shell: python
         run: |
@@ -77,19 +131,60 @@ jobs:
           subprocess.run([sys.executable, "scripts/test_4d.py", "--tool4d",
                           ".tools/tool4d.app/Contents/MacOS/tool4d",
                           "--component", str(component)], check=True)
+      - name: Developer ID sign and notarize the production distribution
+        if: needs.gate.outputs.apple_signing == 'true'
+        env:
+          APPLE_DEVELOPER_ID_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE }}
+          APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          NOTARYTOOL_APPLE_ID: ${{ secrets.NOTARYTOOL_APPLE_ID }}
+          NOTARYTOOL_TEAM_ID: ${{ secrets.NOTARYTOOL_TEAM_ID }}
+          NOTARYTOOL_PASSWORD: ${{ secrets.NOTARYTOOL_PASSWORD }}
+          CODESIGN_APPLE_ID: ${{ secrets.CODESIGN_APPLE_ID }}
+        run: python scripts/sign_release.py sign --require-apple-signing
+      - name: Test the final distributed ZIP after signing and notarization
+        shell: python
+        run: |
+          import pathlib, shutil, subprocess, sys
+          sys.path.insert(0, "scripts")
+          from ci_config import load_config
+          from package_component import unpack_for_test
+          config = load_config(initialized=True)
+          archive = pathlib.Path("dist") / (config["repository"] + ".zip")
+          component = unpack_for_test(pathlib.Path.cwd(), archive)
+          subprocess.run([sys.executable, "scripts/test_4d.py", "--tool4d",
+                          ".tools/tool4d.app/Contents/MacOS/tool4d",
+                          "--component", str(component)], check=True)
+          shutil.copy2("build/host-status.json", "dist/UuidTest-host-compiled.json")
+          shutil.copy2("build/compile-status.json", "dist/UuidTest-compile.json")
+      - name: Record hashes of the validated final release assets
+        shell: python
+        run: |
+          import hashlib, pathlib
+          dist = pathlib.Path("dist")
+          files = sorted(path for path in dist.iterdir() if path.is_file() and path.name != "SHA256SUMS")
+          (dist / "SHA256SUMS").write_text("".join(
+              hashlib.sha256(path.read_bytes()).hexdigest() + "  " + path.name + "\n"
+              for path in files), encoding="utf-8")
       - uses: actions/upload-artifact@v4
         with:
           name: compiled-release
-          path: dist/*.zip
+          path: dist/*
           if-no-files-found: error
           retention-days: 7
 
   publish:
-    needs: compile
+    needs: [compile, gate]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.source_sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: actions/download-artifact@v4
         with:
           name: compiled-release
@@ -98,6 +193,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.gate.outputs.release_tag }}
+          RELEASE_SHA: ${{ needs.gate.outputs.source_sha }}
+          APPLE_SIGNING_REQUIRED: ${{ needs.gate.outputs.apple_signing }}
         run: |
-          gh release create "$RELEASE_TAG" dist/*.zip --verify-tag --title "$RELEASE_TAG" --notes "Unsigned compiled component with universal macOS and x64 Windows CLI resources. Interpreted class and method sources are excluded. This artifact is not signed or notarized. Built with the free tool4D compiler from an explicitly SHA-256-pinned download."
+          git fetch --force --no-tags origin "+refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          python scripts/release_ref.py verify --tag "$RELEASE_TAG" --expected-sha "$RELEASE_SHA"
+          test -s dist/UuidTest.zip
+          if [ "$APPLE_SIGNING_REQUIRED" = "true" ]; then
+            test -s dist/UuidTest.dmg
+            test -s dist/UuidTest-signing.json
+            notes="Developer ID signed macOS CLI and native library; Apple-notarized, stapled DMG. UuidTest.zip preserves the standard dependency-manager layout and was packed from the approved container, then loaded in a real 4D host with compiled:true. Windows x64 CLI is unsigned."
+          else
+            notes="Unsigned compiled component with universal macOS and x64 Windows CLI resources. This development distribution is not signed or notarized."
+          fi
+          (cd dist && sha256sum --check SHA256SUMS)
+          gh release create "$RELEASE_TAG" dist/* --verify-tag --title "UuidTest $RELEASE_TAG" \
+            --notes "$notes Source commit: $RELEASE_SHA. RFC 9562 UUIDv7 generation; no monotonicity guarantee. See the attached hashes and host reports."
