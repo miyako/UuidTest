@@ -1,10 +1,10 @@
 {
   "schema": 1,
-  "initialized": false,
-  "repository": "4d-component-template",
-  "namespace": "TemplateCLI",
-  "cli": "component-cli",
-  "language": null,
-  "feature": "Deterministic UTF-8 greeting example",
+  "initialized": true,
+  "repository": "UuidTest",
+  "namespace": "UuidTest",
+  "cli": "uuid-test",
+  "language": "go",
+  "feature": "RFC 9562 UUIDv7 generation",
   "version": "0.1.0"
 }

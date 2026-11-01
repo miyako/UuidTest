@@ -1,0 +1,16 @@
+UuidTest component and UUIDv7 CLI
+Copyright 2026 Keisuke Miyako
+MIT license: LICENSE (included in this directory in compiled distributions).
+
+The CLI statically links Go runtime and standard-library code.
+Copyright 2009 The Go Authors.
+BSD-3-Clause terms: Go-LICENSE.
+Build toolchain pin: Go 1.26.10. CGO is disabled.
+No third-party UUID library is included.
+
+The original scaffold and artwork came from miyako/4d-component-template
+under the MIT license. The UUIDv7 implementation follows RFC 9562 section
+5.7 and was implemented independently using Go crypto/rand.
+
+4D/tool4d is a separately licensed vendor build/runtime tool.
+The tool4d application is not part of this component distribution.

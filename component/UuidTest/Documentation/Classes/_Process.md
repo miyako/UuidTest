@@ -4,12 +4,16 @@
 is the generic synchronous process adapter. Arguments must be Text, File or
 Folder. File/Folder values are expanded to physical POSIX paths on macOS or
 platform paths on Windows; NUL is rejected using exact string comparison.
+Non-Text/non-Object values are rejected before `OB Instance of`, which requires
+an Object and otherwise raises a 4D runtime error rather than returning False.
 
 `quote(argument : Text) : Text` always quotes one argument. macOS double quotes
 escape backslashes and quotes; Windows follows the CRT backslash-before-quote
 and trailing-backslash rules. This is 4D command-line parsing, not a shell.
 The executable is a physical POSIX File path as required by SystemWorker.
 Native 4D round-trip tests, not shell tests, are necessary on each platform.
+The UuidTest host fixture uses a separate, non-distributed Go probe to assert
+literal Text/File/Folder round trips and successful execution with stderr.
 
 Options: `dataType:"text"`, `encoding:"UTF-8"`, `hideWindow:true`,
 `timeout:30`, `currentDirectory:file.parent`. Input is closed immediately,

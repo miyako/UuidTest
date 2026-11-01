@@ -57,14 +57,14 @@ class CompilerTests(unittest.TestCase):
         with patch.object(compiler.subprocess, "run", side_effect=self.result):
             status = compiler.compile_component(self.root, "/fake/tool4d")
         self.assertEqual(status["input_sha256"], compiler.input_digest(self.root))
-        path = self.project.parent / "Sources/Classes/Greeting.4dm"
+        path = self.project.parent / "Sources/Classes/UUIDv7.4dm"
         path.write_text(path.read_text() + "\n")
         self.assertNotEqual(status["input_sha256"], compiler.input_digest(self.root))
 
     def test_changed_sources_during_compile_rejected(self):
         def changed(*args, **kwargs):
             self.result(*args, **kwargs)
-            path = self.project.parent / "Sources/Classes/Greeting.4dm"
+            path = self.project.parent / "Sources/Classes/UUIDv7.4dm"
             path.write_text(path.read_text() + "\n")
         with patch.object(compiler.subprocess, "run", side_effect=changed):
             with self.assertRaisesRegex(ValueError, "changed during compilation"):

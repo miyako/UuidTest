@@ -133,6 +133,25 @@ class DeliveryTests(unittest.TestCase):
                              ["macos-15-intel", "macos-15", "windows-2022"])
             self.assertEqual({entry["language"] for entry in entries}, {language})
 
+    def test_assembly_verification_uses_lipo_input_before_variadic_architectures(self):
+        for target in ci_config.TARGETS:
+            binary = self.root / "build" / target / ("example-cli.exe" if target == "windows-x64" else "example-cli")
+            binary.parent.mkdir()
+            binary.write_bytes(synthetic_pe() if target == "windows-x64" else b"native slice")
+
+        def lipo(command, **kwargs):
+            self.assertTrue(kwargs["check"])
+            if "-create" in command:
+                self.mac.write_bytes(synthetic_universal())
+            else:
+                self.assertEqual(command, ["lipo", str(self.mac), "-verify_arch", "x86_64", "arm64"])
+
+        with patch.dict(os.environ, {}, clear=True), patch.object(ci_config.subprocess, "run", side_effect=lipo) as run:
+            self.assertEqual(ci_config.assemble(self.root), self.component / "Resources/bin")
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(self.windows.read_bytes(), synthetic_pe())
+        self.assertEqual(self.mac.stat().st_mode & 0o777, 0o755)
+
     def test_all_languages_preserve_repository_release_asset_identity(self):
         for language in ("go", "rust", "cpp"):
             self.config["language"] = language
