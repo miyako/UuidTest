@@ -219,6 +219,7 @@ def main():
     parser.add_argument("command", choices=("matrix", "validate", "assemble", "download-tool4d"))
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--release", action="store_true")
+    parser.add_argument("--tag", help="resolved release tag (manual dispatch may run from a branch)")
     args = parser.parse_args()
     try:
         if args.command == "download-tool4d":
@@ -229,7 +230,7 @@ def main():
         config = load_config(
             args.root, initialized=args.release or args.command == "assemble",
             repository=os.environ.get("GITHUB_REPOSITORY"),
-            tag=os.environ.get("GITHUB_REF_NAME", "") if args.release else None)
+            tag=(args.tag if args.tag is not None else os.environ.get("GITHUB_REF_NAME", "")) if args.release else None)
         if args.release and os.environ.get("FOURD_ENABLED") != "true":
             raise ValueError("releases require FOURD_ENABLED=true")
         if args.command == "matrix":

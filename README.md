@@ -153,28 +153,78 @@ inside the component. CLI/Python passes or a compiler success alone are not
 acceptance of a usable component. `build/host-status.json` contains the latest
 real host report; `dist/UuidTest.zip` is the installable local artifact.
 
-## Releases and limitations
+## Release installation
 
-No tag/release is needed for local installation. For a future approved GitHub
-release, set repository Actions **variables** `FOURD_ENABLED=true`,
-`TOOL4D_URL`, and `TOOL4D_SHA256`, then push matching `v0.1.0`.
-The release gate refuses uninitialized/misnamed/missing/stale/failed artifacts.
-It compiles, unpacks and loads the final component before publication.
-`GITHUB_TOKEN` provides only the publish job's write permission.
-The probe build also needs the pinned Go setup in 4D validation jobs.
+The initial production version is **v0.1.0**. Its release assets are
+`UuidTest.zip` for the 4D Dependency manager and `UuidTest.dmg` for manual
+macOS installation, plus hashes and acceptance reports. The ZIP retains
+`UuidTest.4dbase/UuidTest.4DZ`; no `Contents/` conversion is performed.
+Copy the unpacked `.4dbase` into the host's `Components/` folder and reload.
 
-After a release, add GitHub dependency `miyako/UuidTest` in the host Dependency
+After publication, add GitHub dependency `miyako/UuidTest` in the host Dependency
 manager (20 R6+ / compatible current LTS; confirm your host), or declare:
 
 ```json
 {"version":2100,"dependencies":{"UuidTest":{"github":"miyako/UuidTest","tag":"v0.1.0"}}}
 ```
 
-Apple Silicon local acceptance does not prove Windows 4D runtime/quoting,
-native Intel 4D loading, dependency-manager download, or signing/notarization.
-Native hosted CLI CI is separate evidence. Unsigned downloads may be subject
-to Gatekeeper/quarantine; no automatic trust bypass is provided.
-No signing/account settings are configured here.
+## Production release policy and Actions
+
+`release-policy.json` explicitly opts **0.1.0** into Developer ID signing and
+Apple notarization. Versions not opted in retain the unsigned development
+default. `scripts/package_component.py` itself remains unsigned: signing
+operates on an isolated copy of an already compiled, source-stripped package,
+not on compiler inputs or tracked resources.
+
+Set repository Actions **variables** `FOURD_ENABLED=true`, `TOOL4D_URL` and
+`TOOL4D_SHA256`. Signed production releases additionally require these seven
+Actions **secrets**, used only in the hosted macOS signing step:
+
+| Secret | Purpose |
+| --- | --- |
+| `APPLE_DEVELOPER_ID_CERTIFICATE` | Base64 Developer ID Application P12, including private key |
+| `APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD` | P12 import password |
+| `KEYCHAIN_PASSWORD` | Ephemeral signing keychain password |
+| `CODESIGN_APPLE_ID` | Developer ID Application signing identity |
+| `NOTARYTOOL_APPLE_ID` | Notarization account |
+| `NOTARYTOOL_TEAM_ID` | Matching Apple developer team |
+| `NOTARYTOOL_PASSWORD` | App-specific notarization password |
+
+Registered secrets alone do not sign a release. The opted-in pipeline requires
+all seven, isolates the temporary keychain/search list, signs the actual
+universal CLI and native library with timestamp/hardened runtime and no broad
+entitlements, and verifies their signatures. It signs a read-only DMG,
+requires notarization JSON status **Accepted**, staples and validates the DMG,
+then packs the distributable ZIP from that final mounted container.
+Bare executables and ZIPs cannot be stapled; their signed code is submitted as
+DMG content, while the DMG carries the stapled ticket. Windows x64 remains
+unsigned; Authenticode credentials/workflows are not configured.
+
+The final ZIP is unpacked and tested in a real tool4d host with
+`compiled:true` and `finished:true` before publication. Temporary certificate,
+keychain, mounted volume and notarization intermediates are cleaned on failure
+as well as success. Invalid credentials, signing/notarization rejection or
+cleanup errors fail closed: **no unsigned substitution**.
+
+Release from an explicitly approved, tested commit by creating a new matching
+`v<version>` tag and pushing it. Existing tags/releases are never overwritten.
+The workflow resolves the tag to an immutable SHA, builds all native resources
+from that SHA and rechecks tag movement immediately before publishing.
+Only the publish job receives `GITHUB_TOKEN` write permission.
+
+Both workflows also declare **Run workflow**:
+CI accepts a manually selected branch; release accepts an **existing**
+`version_tag` and a `signed` option. Checking `signed` can require signing;
+unchecking it cannot downgrade the versioned production policy.
+Manual release never creates a tag, builds arbitrary refs or silently merges
+a PR. Actions displays dispatch buttons only after the workflow definition is
+on the default branch; older repositories do not inherit template updates.
+A tag pointing at a tested feature commit can run release without merging it.
+
+Apple Silicon hosted/local 4D acceptance and native CLI CI do not prove
+Windows 4D runtime/quoting, native Intel 4D loading or dependency-manager
+download. Published signing/notarization evidence is separate from unsigned
+local development checks. No automatic Gatekeeper/quarantine bypass is supplied.
 
 ## Licensing and icons
 
