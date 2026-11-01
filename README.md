@@ -1,171 +1,86 @@
-# 4D CLI component template
+# UuidTest
 
-An agent-ready **real 4D component project** wrapping a native CLI on macOS and
-Windows. Choose **Go, Rust or C++**; initialization keeps only that starter.
-The working greeting example uses the same deterministic UTF-8 JSON protocol in
-each language. Replace the example with your feature, not the generic adapter.
+A real **4D component generating UUIDv7** using a bundled, separate Go
+executable. Repository, component, project, catalog, namespace and release
+basename are all exactly `UuidTest`. Initialized from
+[miyako/4d-component-template](https://github.com/miyako/4d-component-template)
+using GitHub's template creation flow. Only Go source is retained.
 
-## Use this template
+## Host API
 
-Click **Use this template → Create a new repository**, then prompt your agent:
-
-> Implement a 4D component in this repository that [FEATURE]. Use [Go/Rust/C++],
-> unique class namespace [NAMESPACE], CLI basename [CLI_NAME], and these
-> constraints: [DEPENDENCIES, LICENSE, LIMITS, ERROR BEHAVIOR]. Follow AGENTS.md,
-> initialize the exact destination repository name, implement the feature and
-> its host API/docs/tests, and deliver a compiled component release. Report
-> unvalidated platforms and required setup honestly.
-
-```sh
-python3 scripts/initialize.py --repository hello-tools --namespace AcmeHello \
-  --cli hello-cli --language go --feature "The requested feature"
-```
-
-The repository argument is the **exact new GitHub repository basename**, not
-`owner/name`, the worktree name or this template's original name. Validation
-allows ASCII letters/digits/`_`/`-` up to 80 characters, namespace identifiers
-up to 31 characters, and lowercase CLI letters/digits/`-` up to 63 characters.
-Namespace uniqueness across a host's components is the user's responsibility.
-
-Initialization renames the component root, project, catalog name/UUID, XML
-namespace, CLI identity/manifests, class docs, README samples, host fixtures and
-package metadata. Workflows derive paths/asset names from `template.json`.
-It stages/validates replacements first, preserves binary icons and keeps only
-the selected `cli/`. Identical reruns are unchanged; conflicting reconfiguration
-requires a fresh template. **The feature description is recorded, not automatically
-implemented.** Read [AGENTS.md](AGENTS.md) for the end-to-end agent workflow.
-
-The uninitialized template is **not releasable** and normal template CI does not
-install three unrelated language toolchains.
-
-## Requirements and specifications
-
-| Surface | Specification |
-| --- | --- |
-| 4D source | Project compatibilityVersion 2060; 4D 20.7 LTS tool4d used locally |
-| Host installation | Dependency manager GitHub support: 20 R6 or later / compatible current LTS; confirm your release |
-| macOS CLI | macOS 12+ with pinned Go 1.26; Rust/C++ deploy to 11+; universal x86_64 + arm64; follow your 4D host's requirements |
-| Windows CLI | x64, hosted Windows Server 2022; explicitly select `Windows-x64` in the API |
-| Windows ARM64 | No native CLI artifact or verified native 4D compiler target; x64 emulation is not a supported/tested promise |
-| Go | CI 1.26.10 (source minimum 1.23), stdlib only, CGO disabled |
-| Rust | CI 1.99.1, edition 2021, std only |
-| C++ | C++17/CMake, hosted Xcode/MSVC, static Windows CRT |
-| Python | 3.10+ locally, CI 3.12 |
-
-Only the selected language is built. Pins are a starting point, not a security
-support promise: update deliberately and repeat checks. GitHub services runner
-images/Xcode/MSVC, so compiler patch versions are not immutable.
-`package.json` is name/version metadata, not a Node application.
-
-## Architecture and exposed API
-
-```text
-template.json                         initialization/release identity
-cli/                                  one selected language implementation
-component/<repository>/
-  Project/<repository>.4DProject       real 4D anchor
-  Project/Sources/Classes/
-    _CLI.4dm                          generic resource resolver
-    _Process.4dm                      generic quoting/execution/status adapter
-    Greeting.4dm                      replaceable feature API
-  Project/Sources/Methods/_CaptureError.4dm
-  Documentation/Classes/*.md           class contracts
-  Resources/logo.png + logo.svg        original icon/reference wrapper
-  Resources/bin/macOS/<cli>            assembled universal executable
-  Resources/bin/Windows/<cli>.exe      x64 executable
-tooling/compiler/                     real Compile project driver
-tests/host/                           namespaced host runtime fixture
-scripts/                              initialize/build/compile/package/test
-```
-
-The **component/project/catalog/package/release ZIP name MUST equal the repository
-basename** for dependency-manager releases. Namespace is independent:
-`settings.4DSettings` is XML with
-`<general component_classStore_name="TemplateCLI"/>`.
-Host code uses `cs.TemplateCLI.Greeting`; internal code uses `cs.Greeting`.
-4D shares classes through the namespace: underscores are internal **by
-convention**, not private access or an exported-class manifest.
-
-Class docs:
-[Greeting](component/4d-component-template/Documentation/Classes/Greeting.md),
-[_CLI](component/4d-component-template/Documentation/Classes/_CLI.md),
-[_Process](component/4d-component-template/Documentation/Classes/_Process.md).
-The actual compiler generates `Resources/en.lproj/syntaxEN.json`, preventing
-stale completion metadata.
-
-### Working host sample
-
-After installation, use your initialized namespace:
+Install `UuidTest.4dbase` in your host's `Components/` folder and reload:
 
 ```4d
-var $tool : cs.TemplateCLI.Greeting
+var $tool : cs.UuidTest.UUIDv7
 var $result : Object
 var $target : Text
 $target:="macOS-universal"
 If (Is Windows)
   $target:="Windows-x64"
 End if
-$tool:=cs.TemplateCLI.Greeting.new($target)
-$result:=$tool.greet("4D")
+$tool:=cs.UuidTest.UUIDv7.new($target)
+$result:=$tool.generate()
 If ($result.ok)
-  ALERT($result.value.message)  // Hello, 4D!
+  ALERT($result.value.uuid)
 Else
   ALERT($result.error.code+": "+$result.error.message)
 End if
 ```
 
-Calls are synchronous with a 30-second process timeout. Success preserves
-`{ok:true,stdout,stderr,exitCode:0,value}`. Failure has `ok:false`,
-`error:{code,message{,details}}`; process output/status are retained when
-available, while prelaunch errors do not invent an exit code.
-Missing executable, unsupported target/platform, invalid argument, launch
-failure, abnormal termination, nonzero CLI status and malformed protocol are
-explicit. Nonempty stderr alone is not failure. No PATH fallback, runtime
-download, unchecked chmod or global host error handler.
+`generate()` returns `{ok:true,stdout,stderr,exitCode:0,value:{protocol:1,uuid}}`.
+`version()` returns the same result envelope with
+`value:{protocol:1,version:"0.1.0"}`.
+Calls are synchronous with a 30-second timeout.
+Failures return `{ok:false,error:{code,message{,details}}}` and preserve
+available process output/status. Prelaunch errors do not invent exit codes.
 
-### CLI contract
+Class contracts: [UUIDv7](component/UuidTest/Documentation/Classes/UUIDv7.md),
+[_CLI](component/UuidTest/Documentation/Classes/_CLI.md),
+[_Process](component/UuidTest/Documentation/Classes/_Process.md).
+The generic resource/execution layer is separate from the feature.
+Underscore classes are internal by convention, not access control.
 
-UTF-8, exactly one JSON line, LF on both systems, protocol version 1:
+## UUID semantics and CLI protocol
 
-| Invocation | Status / stdout / stderr |
-| --- | --- |
-| `hello-cli greet --name "4D"` | 0 / `{"protocol":1,"message":"Hello, 4D!"}` + LF / empty |
-| `hello-cli --version` | 0 / `{"protocol":1,"version":"0.1.0"}` + LF / empty |
-| Invalid/unknown/missing/duplicate args, empty or malformed UTF-8 name | 2 / empty / error JSON below + LF |
+The stdlib-only implementation follows
+[RFC 9562 section 5.7](https://www.rfc-editor.org/rfc/rfc9562.html#section-5.7):
+48-bit Unix milliseconds, version nibble `7`, variant bits `10`, and 74
+random bits from Go `crypto/rand`. Output is lowercase canonical
+`8-4-4-4-12` hex. Invalid clock range and entropy read failures are explicit,
+with no fallback randomness. No third-party UUID library is needed for this
+small, directly tested algorithm.
 
-```json
-{"protocol":1,"error":{"code":"invalid_arguments","message":"expected greet --name <non-empty UTF-8 name> or --version"}}
-```
+**Not monotonic:** each call starts a fresh process. UUIDs generated in the
+same millisecond are randomly ordered; clock rollback is not corrected.
+There is no cross-process counter, stable state, or uniqueness guarantee.
+The collision sample in tests is empirical evidence, not a proof.
 
-No shell is used. `4D.SystemWorker.new` takes **command-line Text**, not argv
-Collection. Each literal argument/path is quoted; File/Folder virtual Resources
-paths are expanded with actual 4D APIs. stdin closes immediately. UTF-8 names,
-spaces, quotes, backslashes, newlines and metacharacters are data. Windows CRT
-and 4D macOS parsing require real native round-trip checks, not shell tests.
-Add an explicit Blob mode if your future feature returns binary output.
+UTF-8 protocol version 1: exactly one JSON line with LF, on both OSes.
 
-## Install after release
+| Invocation | Exit | stdout | stderr |
+| --- | --- | --- | --- |
+| `uuid-test generate` | 0 | `{"protocol":1,"uuid":"<UUIDv7>"}` | empty |
+| `uuid-test --version` | 0 | `{"protocol":1,"version":"0.1.0"}` | empty |
+| `uuid-test --help` | 0 | `{"protocol":1,"usage":"uuid-test generate \| --version \| --help"}` | empty |
+| Missing/unknown/extra arguments | 2 | empty | protocol error JSON |
+| Clock/entropy failure | 1 | empty | protocol error JSON with diagnostic |
+| Output write failure | 1 | may be partial | `output_error` JSON if stderr remains writable |
 
-In the host's Dependency manager add **GitHub** dependency `OWNER/REPOSITORY`
-and choose the released tag/version. The asset must be exactly `REPOSITORY.zip`.
-Alternatively declare in the host's `Project/Sources/dependencies.json`:
+Argument errors are
+`{"protocol":1,"error":{"code":"invalid_arguments","message":"expected generate, --version or --help"}}`.
+Generation errors use `clock_error` or `entropy_error`. In 4D these become
+`cli_error`, preserving the complete diagnostic in `stderr` and `error.message`.
+Failed or short output writes never return success; if stderr itself fails,
+the CLI exits 1 without attempting recursive diagnostics.
+Nonempty stderr alone does not imply failure. No PATH fallback, shell, runtime
+download, permission repair, or permanent host-global error handler is used.
 
-```json
-{
-  "version": 2100,
-  "dependencies": {
-    "hello-tools": {"github": "OWNER/hello-tools", "tag": "v0.1.0"}
-  }
-}
-```
+## Build and local acceptance
 
-Reload the host and use your namespace. Manual installation: unzip and copy
-`REPOSITORY.4dbase` into the host's `Components/` folder.
-Local source dependencies point at the component package root, not the anchor.
-`tests/host/environment4d.json` documents this mapping; automated runtime checks
-install an isolated copy under `Components/` to test actual component loading.
-
-## Build, validate and release
+Requirements: Python 3.10+, Go 1.26.10 (CI pin; module minimum 1.23),
+macOS CLI 12+ or Windows x64. CGO is disabled.
+4D project compatibilityVersion is 2060; local acceptance uses free official
+tool4d 20.7 build 101905 on Apple Silicon. Native Windows ARM64 is unsupported.
 
 ```sh
 python3 -m unittest discover -s tests -v
@@ -173,140 +88,103 @@ python3 scripts/generate_icons.py --check
 python3 scripts/build_cli.py --target macos-arm64
 ```
 
-Use your native target: `macos-x64`, `macos-arm64`, `windows-x64`.
-CI builds/tests only the selected language in native hosted jobs, uploads
-same-commit binaries and combines macOS slices using `lipo`.
-CI executable artifacts are **not compiled component releases**.
-
-### Real 4D tooling and configuration
-
-[tool4d](https://developer.4d.com/docs/20/Admin/cli#tool4d) is the official **free
-standalone headless tool** used by the reference component pipelines. This flow
-does not require a license/serial secret. Full IDE, Server and merged applications
-have separate vendor licensing. Never bundle tool4d into the MIT component.
-
-Set these repository **Actions variables** for hosted 4D validation/releases:
-
-| Variable | Value |
-| --- | --- |
-| `FOURD_ENABLED` | `true` to enable vendor tool download/use; mandatory for release |
-| `TOOL4D_URL` | Official macOS ARM64 tool4d `.tar.xz` URL for your approved fixed 20.7+ build |
-| `TOOL4D_SHA256` | Exact archive SHA256, verified out of band |
-
-Reference URL form:
-`https://resources-download.4d.com/release/20.x/20.7/BUILD/mac/tool4d_arm64.tar.xz`.
-`latest` is discovery-only/mutable; checksum mismatch fails. Local validation
-used 20.7 `latest` resolving **build 101905**, SHA256
-`40a5d177a4f73165f52abf6ec8000249d81411c41353ccf258cece8e74639261`.
-The fixed `101905` endpoint was also observed available. Verify its downloaded
-hash before configuring CI.
-No imagined setup action or unpinned external compiler is used.
+Native CI builds/tests `macos-x64`, `macos-arm64`, and `windows-x64` separately
+from the same commit, then `scripts/ci_config.py assemble` combines the macOS
+slices with `lipo`. For local Apple Silicon acceptance, Go can also cross-build
+Intel macOS and Windows binaries (this does **not** prove native execution):
 
 ```sh
-python3 scripts/test_4d.py --tool4d /path/to/tool4d
-python3 scripts/compile_component.py --tool4d /path/to/tool4d
-python3 scripts/package_component.py --repository OWNER/REPOSITORY \
-  --tag v0.1.0 --unpack-test
-python3 scripts/test_4d.py --tool4d /path/to/tool4d \
-  --component build/release-test/REPOSITORY.4dbase
+mkdir -p build/macos-x64 build/windows-x64
+(cd cli && CGO_ENABLED=0 GOTOOLCHAIN=local GOOS=darwin GOARCH=amd64 \
+  go build -trimpath -o ../build/macos-x64/uuid-test .)
+(cd cli && CGO_ENABLED=0 GOTOOLCHAIN=local GOOS=windows GOARCH=amd64 \
+  go build -trimpath -o ../build/windows-x64/uuid-test.exe .)
+python3 scripts/ci_config.py assemble
 ```
 
-The driver runs real `Compile project` for `x86_64_generic` and
-`arm64_macOS_lib`, requiring a **fresh successful JSON result**. Errors or absent
-results fail even when tool4d exits zero. It cleans generated DerivedData before
-recompile (stale compiled projects can otherwise be treated as sourceless).
-Native Libraries and CompiledCode are required, not source-shaped substitutes.
+Download the official vendor tool into ignored `.tools/`, never Resources:
 
-Align `template.json.version`, `package.json.version` and the CLI version,
-commit and push `v<version>`, e.g. `v0.1.0`. Release builds all CLI targets from
-that same tag, compiles after Resources assembly, packs `REPOSITORY.zip`,
-and **loads the unpacked compiled package in a real 4D host before publishing**.
-Uninitialized/misnamed projects, missing tool/binary/library, failed compile or
-failed host test fail closed. Only the publish job receives `contents:write`
-through built-in `GITHUB_TOKEN`; no personal token/version-bot commit needed.
+```sh
+export TOOL4D_URL=https://resources-download.4d.com/release/20.x/20.7/101905/mac/tool4d_arm64.tar.xz
+export TOOL4D_SHA256=40a5d177a4f73165f52abf6ec8000249d81411c41353ccf258cece8e74639261
+python3 scripts/ci_config.py download-tool4d
+python3 scripts/test_4d.py --tool4d .tools/tool4d.app/Contents/MacOS/tool4d
+python3 scripts/compile_component.py --tool4d .tools/tool4d.app/Contents/MacOS/tool4d
+python3 scripts/package_component.py --repository miyako/UuidTest \
+  --tag v0.1.0 --unpack-test
+python3 scripts/test_4d.py --tool4d .tools/tool4d.app/Contents/MacOS/tool4d \
+  --component build/release-test/UuidTest.4dbase
+```
+
+The `--tag` argument validates package version identity; it does not create or
+publish a tag. Local unsigned compilation/testing needs **no signing secrets,
+4D license activation, or repository configuration changes**.
+
+The host fixture loads an isolated source or unpacked compiled component,
+calls `cs.UuidTest.UUIDv7`, checks six real generations, version, missing
+resources, unsupported targets, launch errors, malformed protocols, and real
+argument round trips through `_Process`. A separate Go test probe exercises
+Unicode, spaces, quotes, backslashes, empty/newline/metacharacter strings and
+File/Folder arguments, with zero exit/nonempty stderr. It is not distributed.
+Python additionally validates UUID bytes, timestamp bounds and distinctness.
+Go tests inject clock/entropy for deterministic vectors, range/read failures,
+all random field masks, and a measured 10,000-UUID collision sample.
+
+Compilation uses actual `Compile project` with `x86_64_generic` and
+`arm64_macOS_lib`, requires fresh successful output and binds component inputs
+by SHA256. Compiler-generated completion metadata must name `UUIDv7`.
+Packaging preserves explicit nested ZIP directory entries needed by the real
+4D loader, includes native Libraries externally, and strips all `.4dm` source:
 
 ```text
-REPOSITORY.zip
-  REPOSITORY.4dbase/
-    REPOSITORY.4DZ                     standard ZIP: Project metadata + CompiledCode
-    Libraries/lib4d-arm64.dylib        OUTSIDE .4DZ
-    Resources/bin/macOS/CLI            universal, executable ZIP mode
-    Resources/bin/Windows/CLI.exe      x64
-    Resources/licenses/LICENSE        redistribution notice included
-    Resources/logo.* + en.lproj/...
+UuidTest.zip
+  UuidTest.4dbase/
+    UuidTest.4DZ
+    Libraries/lib4d-arm64.dylib
+    Resources/bin/macOS/uuid-test          universal x86_64 + arm64
+    Resources/bin/Windows/uuid-test.exe    x64
+    Resources/licenses/...
+    Resources/logo.png + logo.svg + en.lproj/...
     Documentation/Classes/...
 ```
 
-Packed `.4DZ` excludes `.4dm` Classes/Methods source. ZIP order/timestamps/modes
-are deterministic; serviced native compiler outputs need not be bit-identical.
-Explicit nested directory ZIP records are required: omitting them caused a real
-tool4d compiled-component loader crash, despite producing a generally valid ZIP.
+The final host test must report `compiled:true`, evaluated by `Is compiled mode`
+inside the component. CLI/Python passes or a compiler success alone are not
+acceptance of a usable component. `build/host-status.json` contains the latest
+real host report; `dist/UuidTest.zip` is the installable local artifact.
 
-### Optional signing/notarization
+## Releases and limitations
 
-Signing is **not required** by this unsigned build/release pipeline. PDF references
-sign macOS distributions; their release policy is not an intrinsic 4D requirement.
-Windows Authenticode and Apple notarization are not configured here.
+No tag/release is needed for local installation. For a future approved GitHub
+release, set repository Actions **variables** `FOURD_ENABLED=true`,
+`TOOL4D_URL`, and `TOOL4D_SHA256`, then push matching `v0.1.0`.
+The release gate refuses uninitialized/misnamed/missing/stale/failed artifacts.
+It compiles, unpacks and loads the final component before publication.
+`GITHUB_TOKEN` provides only the publish job's write permission.
+The probe build also needs the pinned Go setup in 4D validation jobs.
 
-For production, explicitly add opt-in signing before final package validation:
-certificate/password, ephemeral keychain password, identity and notarization
-credentials in Actions **secrets only**; minimum entitlements; fail each codesign
-error; require notarization JSON `Accepted`; clean temporary keychain in
-`always()`; retest the final signed package. Bare CLI executables cannot be
-stapled. Stapling a signed container and Apple's recommended `Contents/` component
-layout require deliberate packaging changes. Never `continue-on-error` signing.
-Gatekeeper/quarantine can block unsigned downloaded executables; no runtime
-trust bypass is supplied.
+After a release, add GitHub dependency `miyako/UuidTest` in the host Dependency
+manager (20 R6+ / compatible current LTS; confirm your host), or declare:
 
-## Icons
-
-Original `assets/icon-source.svg` is rendered to a **real 1024×1024 RGBA PNG**.
-Resources `logo.svg` is a reference-style **64×64 SVG embedding a PNG data URI**
-whose decoded bytes equal `logo.png`. The convention is **PNG-in-SVG**, not the
-reverse (verified across all three inspirations).
-
-```sh
-python3 scripts/generate_icons.py
-python3 scripts/generate_icons.py --check
+```json
+{"version":2100,"dependencies":{"UuidTest":{"github":"miyako/UuidTest","tag":"v0.1.0"}}}
 ```
 
-Regenerate both icons together. The dependency-free renderer supports this
-original rectangle/polygon artwork; unsupported elements fail explicitly.
-Use a pinned real SVG rasterizer for richer artwork, never rename SVG to PNG.
+Apple Silicon local acceptance does not prove Windows 4D runtime/quoting,
+native Intel 4D loading, dependency-manager download, or signing/notarization.
+Native hosted CLI CI is separate evidence. Unsigned downloads may be subject
+to Gatekeeper/quarantine; no automatic trust bypass is provided.
+No signing/account settings are configured here.
 
-## Remarks and validation limitations
+## Licensing and icons
 
-No PDF settings/algorithms, tables/authentication schema, async queue, network
-installer or external PATH search. Generic helpers are internal-by-convention.
-Implement cancellation/streaming explicitly for features needing more than the
-finite synchronous timeout.
+Component, UUID algorithm, tests and original scaffold artwork are MIT:
+[LICENSE](LICENSE). Go's statically linked runtime/stdlib are BSD-3-Clause;
+their notice is redistributed in `Resources/licenses/Go-LICENSE`.
+Vendor tool4d is separately licensed and never bundled.
+No third-party UUID algorithm or library source was copied.
 
-Local Apple Silicon validation covers all three CLI starters, initialization,
-icon/package invariants, actual free tool4d compilation and namespaced host
-calls against both source and the unpacked source-stripped release artifact,
-including `Is compiled mode = True`. Hosted Windows/macOS Intel, Windows **4D** quoting, dependency-manager
-download from a new release, and signing are separate observations; Python or
-CLI tests alone do not prove them. See PR results for exact observed checks.
-
-## Licensing and provenance
-
-New scaffold, CLI starters, tests and original icon are **MIT**: [LICENSE](LICENSE).
-Keep its copyright/license in redistributed source/binary assets. Future bundled
-tools, libraries and static dependencies carry their own upstream license/NOTICE
-obligations: include notices in `component/<name>/Resources/licenses/`.
-4D/tool4d are separately licensed vendor tools, not MIT dependencies.
-
-Conventions were verified from
-[pdfdistill-pdfcpu](https://github.com/miyako/pdfdistill-pdfcpu),
-[pdfdistill-qpdf](https://github.com/miyako/pdfdistill-qpdf),
-[pdfdistill-lopdf](https://github.com/miyako/pdfdistill-lopdf)
-(MIT, 2026 Keisuke Miyako), and
-[4d-class-compiler](https://github.com/miyako/4d-class-compiler)
-(MIT, 2022 Keisuke Miyako). No feature algorithms, binaries or artwork were copied.
-[4d-plugin-tutorial](https://github.com/miyako/4d-plugin-tutorial) inspired the
-agent-driven tutorial UX; this is a component/standalone CLI, not its native
-plug-in SDK/code. Official references:
-[dependency naming](https://developer.4d.com/docs/Project/components),
-[Compile project](https://developer.4d.com/docs/commands/compile-project),
-[SystemWorker](https://developer.4d.com/docs/API/SystemWorkerClass) and
-[error handling](https://developer.4d.com/docs/20/Concepts/error-handling).
+Edit `assets/icon-source.svg` only within the supported rectangle/polygon
+renderer, then run `python3 scripts/generate_icons.py`. Both icons regenerate:
+`logo.png` is real RGBA PNG and `logo.svg` embeds its byte-identical PNG data URI.
+See [AGENTS.md](AGENTS.md) for inherited component/build/signing requirements.

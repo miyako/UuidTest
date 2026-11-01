@@ -8,6 +8,8 @@ import platform
 import re
 import shutil
 import subprocess
+import time
+import uuid
 
 from ci_config import ROOT, TARGETS, load_config
 
@@ -40,12 +42,26 @@ def smoke_test(executable, version):
         return (json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
 
     check(["--version"], 0, line({"protocol": 1, "version": version}), b"")
-    for name in ("World", "世界 café 😀", 'quotes" and \\ slash', "line\nbreak"):
-        check(["greet", "--name", name], 0, line({"protocol": 1, "message": f"Hello, {name}!"}), b"")
+    check(["--help"], 0, line({"protocol": 1, "usage": "uuid-test generate | --version | --help"}), b"")
+    before = time.time_ns() // 1_000_000
+    result = subprocess.run([str(executable), "generate"], capture_output=True, timeout=20)
+    after = time.time_ns() // 1_000_000
+    if result.returncode != 0 or result.stderr:
+        raise ValueError(f"UUIDv7 generation failed: {result!r}")
+    payload = json.loads(result.stdout)
+    if (not isinstance(payload, dict) or set(payload) != {"protocol", "uuid"}
+            or type(payload["protocol"]) is not int or payload["protocol"] != 1
+            or not isinstance(payload["uuid"], str)):
+        raise ValueError(f"Invalid UUIDv7 response shape: {result!r}")
+    value = uuid.UUID(payload["uuid"])
+    if (result.stdout != line(payload) or str(value) != payload["uuid"]
+            or value.version != 7 or value.variant != uuid.RFC_4122
+            or not before <= int.from_bytes(value.bytes[:6], "big") <= after):
+        raise ValueError(f"Invalid UUIDv7 protocol or timestamp: {result!r}")
     error = line({"protocol": 1, "error": {"code": "invalid_arguments",
-                 "message": "expected greet --name <non-empty UTF-8 name> or --version"}})
-    for arguments in ([], ["unknown"], ["greet", "--name", ""], ["--version", "extra"],
-                      ["greet", "--name"], ["greet", "--name", "World", "extra"]):
+                 "message": "expected generate, --version or --help"}})
+    for arguments in ([], ["unknown"], ["generate", ""], ["--version", "extra"],
+                      ["generate", "--name"], ["generate", "World", "extra"]):
         check(arguments, 2, b"", error)
 
 

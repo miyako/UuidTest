@@ -1,7 +1,7 @@
 {
-  "name": "4d-component-template",
+  "name": "UuidTest",
   "version": "0.1.0",
   "private": true,
-  "description": "Deterministic UTF-8 greeting example",
+  "description": "RFC 9562 UUIDv7 generation",
   "license": "MIT"
 }

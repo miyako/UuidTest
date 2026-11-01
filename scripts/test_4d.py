@@ -7,6 +7,9 @@ import subprocess
 import sys
 import shutil
 import tempfile
+import os
+import time
+import uuid
 
 
 def test_4d(root, tool4d, component=None):
@@ -17,26 +20,52 @@ def test_4d(root, tool4d, component=None):
     output = root / "build" / "host-status.json"
     output.parent.mkdir(exist_ok=True)
     output.unlink(missing_ok=True)
-    request = output.parent / "host-request.json"
-    request.write_text(json.dumps({"status": str(output), "expectCompiled": component is not None}) + "\n")
     source = Path(component).resolve() if component else root / "component" / config["repository"]
-    with tempfile.TemporaryDirectory(prefix="4d host ", dir=output.parent) as temporary:
+    prefix = "4d host 日本語 " if os.name == "nt" else '4d host 日本語 "quoted" '
+    with tempfile.TemporaryDirectory(prefix=prefix, dir=output.parent) as temporary:
         host = Path(temporary) / "Host"
         shutil.copytree(root / "tests" / "host", host,
                         ignore=shutil.ignore_patterns("DerivedData", "userPreferences.*", "Data", "Logs"))
         (host / "environment4d.json").unlink()
         package = host / "Components" / (config["repository"] + ".4dbase")
         shutil.copytree(source, package, ignore=shutil.ignore_patterns("userPreferences.*", "Data", "Logs"))
+        probe = Path(temporary) / ("argument probe.exe" if os.name == "nt" else "argument probe")
+        env = dict(os.environ, CGO_ENABLED="0", GOTOOLCHAIN="local")
+        env.pop("GOOS", None)
+        env.pop("GOARCH", None)
+        subprocess.run(["go", "build", "-trimpath", "-o", str(probe), str(root / "tests/probe/main.go")],
+                       env=env, check=True, timeout=120)
+        request = Path(temporary) / "host request.json"
+        request.write_text(json.dumps({"status": str(output), "expectCompiled": component is not None,
+                                      "probe": str(probe)}, ensure_ascii=False) + "\n", encoding="utf-8")
+        before = time.time_ns() // 1_000_000
         subprocess.run([str(Path(tool4d).resolve()), str(host / "Project" / "Host.4DProject"),
                         "--skip-onstartup", "--startup-method=Smoke", "--dataless",
                         "--user-param=" + str(request)], check=True, timeout=120)
+        after = time.time_ns() // 1_000_000
     if not output.is_file():
         raise ValueError("tool4d did not write host-status.json; host execution is unverified")
     status = json.loads(output.read_text())
-    if status.get("success") is not True or len(status.get("cases", [])) != 6:
+    if (status.get("success") is not True or status.get("finished") is not True
+            or len(status.get("cases", [])) != 6):
         raise ValueError("4D host contract failed: " + json.dumps(status, ensure_ascii=False))
     if component is not None and status.get("compiled") is not True:
         raise ValueError("release component was not running compiled code")
+    values = set()
+    for result in status["cases"]:
+        value = uuid.UUID(result["value"]["uuid"])
+        if (result["ok"] is not True or result["exitCode"] != 0 or result["stderr"] != ""
+                or result["value"]["protocol"] != 1 or str(value) != result["value"]["uuid"]
+                or value.version != 7 or value.variant != uuid.RFC_4122
+                or not before <= int.from_bytes(value.bytes[:6], "big") <= after
+                or value in values):
+            raise ValueError("4D host returned an invalid UUIDv7 or process result: " + json.dumps(result))
+        values.add(value)
+    if (len(status.get("roundTrips", [])) != 7 or len(status.get("invalidPayloads", [])) != 6
+            or len(status.get("invalidFrames", [])) != 5):
+        raise ValueError("4D host did not exercise the full protocol/argument contract")
+    status["observedUnixMsBounds"] = [before, after]
+    output.write_text(json.dumps(status, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return status
 
 
